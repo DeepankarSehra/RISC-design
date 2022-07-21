@@ -1,54 +1,44 @@
 library ieee;
 use ieee.numeric_std.all;
 use ieee.std_logic_1164.all;
--- checks for hazard LLI R7, LHI R7 or JLR instruction
-entity hazard_RR is 
+
+entity hazard1 is 
 	port( 
-		AR3_ID_RR : in std_logic_vector(2 downto 0);
-		ID_RR_valid : in std_logic_vector(2 downto 0);
-		SE_ID_RR    : in std_logic_vector(15 downto 0);
-		LS_PC_ID_RR : in std_logic_vector(15 downto 0);
-		DO1_ID_RR   : in std_logic_vector(15 downto 0);
-		opcode	    : in std_logic_vector(3 downto 0);
+		Rf_A3 : in std_logic_vector(2 downto 0);
+		Rf_valid: in std_logic_vector(2 downto 0);
+		Reg_id    : in std_logic_vector(15 downto 0);
+		ir   : in std_logic_vector(15 downto 0);
+		opcode	: in std_logic_vector(3 downto 0);
 		clk: in std_logic;
 		---------------------------------------
-		clear : out std_logic := '0'; --clear IFID and IDRR
-		top_mux_RR_control : out std_logic;
-		data_mux_RR: out std_logic_vector(15 downto 0));
+		amux_sel : out std_logic;
+		dmux_in: out std_logic_vector(15 downto 0));
 end entity;
 
-architecture hazard0 of hazard_RR is
-	signal LLI_R7_flush, LHI_R7_flush, JLR : std_logic := '0';
-	signal clear_temp :std_logic := '0';
+architecture hazard of hazard1 is
+	signal R7_flush, LH_R7_flush, JLR_flush : std_logic := '0';
+	signal clear : std_logic := '0';
 begin
 
-    --------------------------------------------------------------------
-
-	clear <= clear_temp;
-	top_mux_RR_control   <= clear_temp;
-
-    --------------------------------------------------------------------
-
-	-- ID_RR_mux_control will decide the operation for LHI and LLI if all 'X' are 0
-	LHI_R7_flush <= '1' when(opcode = "0011" and AR3_ID_RR = "111" and ID_RR_valid(0) = '1') else '0';
-	LLI_R7_flush <= '1' when(opcode = "1011" and AR3_ID_RR = "111" and ID_RR_valid(0) = '1') else '0';
-	JLR  	     <= '1' when(opcode = "1001") else '0';
-	data_mux_RR  <= SE_ID_RR when(LLI_R7_flush = '1') else LS_PC_ID_RR when(LHI_R7_flush = '1') else DO1_ID_RR;
-	clear_temp   <= LHI_R7_flush or LLI_R7_flush or JLR;
-	-- clears the IDRR and clear signal is passed throug a register for one cycle delay 
-end architecture;
+	amux_sel   <= clear;
+	
+	LH_R7_flush  <= '1' when(opcode = "0011" and Rf_A3 = "111" and Rf_valid(0) = '1') else '0';
+	R7_flush  <= '1' when(opcode = "1011" and Rf_A3 = "111" and Rf_valid(0) = '1') else '0';
+	JLR_flush  <= '1' when(opcode = "1001") else '0';
+	data_mux_RR  <= Reg_id when(R7_flush = '1') else D3_reg_write;
+	clear  <= LH_R7_flush or R7_flush or JLR_flush;
+end architecture hazard;
 
 
---###############################################################################################
 library ieee;
 use ieee.numeric_std.all;
 use ieee.std_logic_1164.all;
 
-entity staller is 
+entity stalling is 
 	port( 
-		decoder_AR1 : in std_logic_vector(2 downto 0);
-		decoder_AR2 : in std_logic_vector(2 downto 0);
-		ID_RR_LW : in std_logic;
+		D1_in : in std_logic_vector(2 downto 0);
+		D2_in : in std_logic_vector(2 downto 0);
+		lw_sel : in std_logic;
 		IF_ID_cond : in std_logic_vector(1 downto 0);
 		-- LW from ID_RR
 		ID_RR_AR3 : in std_logic_vector(2 downto 0);
@@ -58,20 +48,19 @@ entity staller is
 		clk: in std_logic;
 		---------------------------------------
 		disable_out : out std_logic := '0';
-		SM_start_control : out std_logic := '0';
-		clear : out std_logic := '0');
+		SM_start_control : out std_logic := '0');
 end entity;
 
 -- to be changed staller
 architecture hazard of staller is 
 	signal disable : std_logic := '0';
 begin 
-	process(opcode_ID_RR, opcode_IF_ID, clk, decoder_AR1, decoder_AR2, ID_RR_LW, 
+	process(opcode_ID_RR, opcode_IF_ID, clk, decoder_AR1, decoder_AR2, lw_sel, 
 		ID_RR_valid, ID_RR_AR3, decoder_valid, IF_ID_cond)
 	begin
 		SM_start_control <= '0';
 		disable <= '0';
-		if(ID_RR_LW = '1') then
+		if(lw_sel = '1') then
 			if(opcode_IF_ID = "0101" and (decoder_AR2 = ID_RR_AR3)) then   --SW ins in IF_ID
 				disable <= '0';
 			elsif(opcode_IF_ID = "0111") then		--SM
@@ -87,91 +76,10 @@ begin
 		end if;	
 	end process;
 	
-	clear <= disable;
 	disable_out <= disable;
 	
 
 end architecture;
-
---#######################################################################################################
-
-library ieee;
-use ieee.numeric_std.all;
-use ieee.std_logic_1164.all;
-
-entity hazard_EX is 
-	port( 
-		RR_EX_AR3, RR_EX_valid, RR_EX_mux_control  : in std_logic_vector(2 downto 0);
-		RR_EX_opcode : in std_logic_vector(3 downto 0);
-		EX_MM_FC, MM_WB_FC : in std_logic;
-		RR_EX_C : in std_logic_vector(1 downto 0);	--conditions
-		EX_MM_F, MM_WB_F, F, alu_F : in std_logic_vector(2 downto 0);  -- EX_MM flafs must be taken from MM hazard block
-		ALU_out, PC_inc, SE_PC : in  std_logic_vector(15 downto 0);
-		beq_is_taken, beq_bit: in std_logic;
-		table_toggle : out std_logic;
-		pass_beq_taken : out std_logic;
-		top_EX_mux_data : out std_logic_vector(15 downto 0);
-		top_EX_mux : out std_logic;
-		flush,clear_current : out std_logic;
-		clk : in std_logic);
-end entity;
-
-architecture hazard of hazard_EX is 
-	signal R7_update : std_logic := '0';
-	signal valid_flags : std_logic_vector(2 downto 0);  --(OV C V)
-	signal cond_ar_ins : std_logic := '0';
-	signal false_cond_ar : std_logic := '0';
-	signal ar_ins : std_logic := '0';
-	signal tmp_table_toggle : std_logic := '0';
-begin 
-	ar_ins <= ((not RR_EX_opcode(3)) and (not RR_EX_opcode(2))) and (not (RR_EX_opcode(0) and RR_EX_opcode(1))); 
-	cond_ar_ins <= '1' when ((RR_EX_C /= "00") and (ar_ins = '1')) else '0';
-	false_cond_ar <= '1' when ((cond_ar_ins = '1') and (((RR_EX_C = "01") and (valid_flags(0) = '0')) or ((RR_EX_C = "10") and (valid_flags(1) = '0')) or ((RR_EX_C = "11") and (valid_flags(2) = '0')))) else '0';
-	
-	process(clk, MM_WB_F, MM_WB_FC, EX_MM_F, EX_MM_FC, F)
-	begin
-		valid_flags <= F;
-		if(EX_MM_FC = '1') then
-			valid_flags <= EX_MM_F;   --LSB for FC
-		elsif(MM_WB_FC = '1') then
-			valid_flags <= MM_WB_F;
-		end if;
-	end process;
-	
-	clear_current <= false_cond_ar;
-	
-	process(false_cond_ar, RR_EX_AR3, RR_EX_valid, RR_EX_mux_control, ar_ins,
-		ALU_out, beq_bit, beq_is_taken, alu_F, PC_inc, SE_PC)
-	begin
-		R7_update <= '0';
-		tmp_table_toggle <= '0';
-		top_EX_mux_data <= (others => '0');
-		if(RR_EX_AR3 = "111" and RR_EX_valid(0) = '1' and ar_ins = '1') then
-			if (false_cond_ar = '0') then
-				R7_update <= '1';
-				top_EX_mux_data <= ALU_out;
-			end if;
-		elsif(beq_bit = '1') then
-			if(beq_is_taken = '1' and alu_F(0) = '0') then --beq not taken but taken
-				R7_update <= '1';
-				top_EX_mux_data <= PC_inc;
-				tmp_table_toggle <= '1';
-			elsif(beq_is_taken = '0' and alu_F(0) = '1') then 
-				R7_update <= '1';
-				top_EX_mux_data <= SE_PC;
-				tmp_table_toggle <= '1';
-			end if;	
-		end if;
-	end process;
-	
-	flush <= R7_update;
-	top_EX_mux <= R7_update;
-	table_toggle <= tmp_table_toggle;
-	pass_beq_taken <= beq_is_taken xor tmp_table_toggle;
-	
-end architecture;
-
---############################################################################################################
 
 library ieee;
 use ieee.numeric_std.all;
