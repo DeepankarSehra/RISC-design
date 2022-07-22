@@ -13,7 +13,7 @@ end entity;
 
 architecture behav of alu is
 signal temp :std_logic_vector(15 downto 0);
-signal temp1 :unsigned(std_logic_vector(15 downto 0));
+signal temp1 :std_logic_vector(15 downto 0);
 begin
 process(in1, in2, alu_sel1, alu_sel2)
 begin
@@ -38,8 +38,8 @@ elsif(alu_sel1 = '1' and alu_sel2 = '1') then --equality
 	if(temp = "0000000000000000") then
 		zero <= '1';
 	end if;
-elsif(alu_sel1 = '0' and alu_sel2 = '1') then 
-		temp1<=shift_left(unsigned(in2), to_integer(1));
+else if(alu_sel1 = '0' and alu_sel2 = '1') then 
+		temp1<=shift_left(unsigned(in2), 1);
 		temp<=std_logic_vector(unsigned(in1) + unsigned(temp1));
 end if;
 end process;
